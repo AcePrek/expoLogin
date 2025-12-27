@@ -1,0 +1,43 @@
+{
+  "name": "expo-login-auth-module",
+  "version": "1.0.0",
+  "description": "Reusable Expo + Supabase-compatible email/password auth screen (UI in one file, provider-based architecture).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AcePrek/expoLogin.git"
+  },
+  "homepage": "https://github.com/AcePrek/expoLogin#readme",
+  "bugs": {
+    "url": "https://github.com/AcePrek/expoLogin/issues"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "keywords": [
+    "expo",
+    "react-native",
+    "supabase",
+    "auth",
+    "login",
+    "signup"
+  ],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "AuthScreen.ui.js",
+    "AuthScreen.logic.js",
+    "auth.providers.js",
+    "auth.types.js",
+    "README.md",
+    "LICENSE",
+    "ENV.example"
+  ],
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.72"
+  },
+  "scripts": {
+    "validate:json": "node -e \"JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')\"",
+    "validate:pack": "npm pack --silent >/dev/null && echo \"npm pack OK\""
+  }
+}
