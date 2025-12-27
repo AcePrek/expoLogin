@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+
+# npm pack artifacts
+*.tgz
+
+# macOS
+.DS_Store
+
+# dependencies
+node_modules/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+
+# macOS
+.DS_Store
+
+
