@@ -51,7 +51,8 @@ const DESIGN = {
     success: '#24C26A',
     disabled: '#BADAFF',
     closeBg: '#F5F5F5',
-    shadow: '#003AA6',
+    // Figma button shadow (sharp, under the button)
+    shadow: '#0047D5',
   },
 
   spacing: {
@@ -62,6 +63,8 @@ const DESIGN = {
     inputTopGap: 9,
     inputHeight: 64,
     buttonHeight: 64,
+    // Figma: 22.5625rem ≈ 361px (keep button centered on large screens)
+    buttonMaxWidth: 361,
     buttonTopGap: 16,
     inputHPad: 18,
   },
@@ -188,7 +191,8 @@ export function AuthScreen({ supabase }) {
                 {
                   backgroundColor: theme.primary,
                   borderColor: 'rgba(0,229,255,0.3)',
-                  shadowColor,
+                  shadowColor: theme.shadow ?? shadowColor,
+                  borderBottomColor: theme.shadow ?? shadowColor,
                   opacity: pressed ? 0.9 : 1,
                 },
               ]}
@@ -328,7 +332,8 @@ export function AuthScreen({ supabase }) {
                   {
                     backgroundColor: canContinue ? theme.primary : theme.disabled,
                     borderColor: canContinue ? 'rgba(0,229,255,0.3)' : 'transparent',
-                    shadowColor,
+                    shadowColor: canContinue ? (theme.shadow ?? shadowColor) : 'transparent',
+                    borderBottomColor: canContinue ? (theme.shadow ?? shadowColor) : 'transparent',
                     opacity: pressed ? 0.95 : 1,
                   },
                 ]}
@@ -417,14 +422,24 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     height: DESIGN.spacing.buttonHeight,
+    width: '100%',
+    maxWidth: DESIGN.spacing.buttonMaxWidth,
+    alignSelf: 'center',
+    // Figma: padding 1.25rem 0 (20px vertical)
+    paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: DESIGN.radius.button,
     borderWidth: 1,
-    shadowOpacity: 0.35,
+    // Sharp bottom "shadow line" look (cross-platform):
+    // - iOS uses shadow props (no blur)
+    // - Android gets a crisp bottom border (elevation adds blur)
+    shadowOpacity: 1,
     shadowRadius: 0,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 0,
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
   },
   primaryButtonText: {
     fontSize: DESIGN.font.button,
