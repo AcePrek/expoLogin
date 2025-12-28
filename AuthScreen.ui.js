@@ -185,6 +185,8 @@ export function AuthScreen({ supabase }) {
   } = useAuthScreenLogic({ supabase });
 
   const headerTitle = isExistingUser ? DESIGN.strings.titleWelcomeBack : DESIGN.strings.titleWelcome;
+  const showNameField = isNewUser && (step === AUTH_STEP.NAME || step === AUTH_STEP.PASSWORD);
+  const hideNameFieldVisually = step === AUTH_STEP.PASSWORD;
 
   // 1. Focus logic (Keyboard lift is handled automatically by KeyboardAvoidingView)
   useEffect(() => {
@@ -308,16 +310,25 @@ export function AuthScreen({ supabase }) {
                 </>
               ) : null}
 
-              {step === AUTH_STEP.NAME ? (
-                <>
-                  <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.nameLabel}</Text>
-                  <View style={{ height: DESIGN.spacing.inputTopGap }} />
+              {/* Name field is kept MOUNTED across NAME -> PASSWORD for new users to prevent keyboard closing. */}
+              {showNameField ? (
+                <View
+                  style={hideNameFieldVisually ? styles.hiddenFieldWrap : undefined}
+                  pointerEvents={hideNameFieldVisually ? 'none' : 'auto'}
+                >
+                  {step === AUTH_STEP.NAME ? (
+                    <>
+                      <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.nameLabel}</Text>
+                      <View style={{ height: DESIGN.spacing.inputTopGap }} />
+                    </>
+                  ) : null}
+
                   <View
                     style={[
                       styles.inputWrap,
-                      {
-                        borderColor: errorMessage ? theme.danger : theme.border,
-                      },
+                      hideNameFieldVisually
+                        ? { borderColor: 'transparent', backgroundColor: 'transparent' }
+                        : { borderColor: errorMessage ? theme.danger : theme.border },
                     ]}
                   >
                     <TextInput
@@ -331,8 +342,11 @@ export function AuthScreen({ supabase }) {
                       returnKeyType="done"
                     />
                   </View>
-                  {errorMessage ? <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text> : null}
-                </>
+
+                  {step === AUTH_STEP.NAME && errorMessage ? (
+                    <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text>
+                  ) : null}
+                </View>
               ) : null}
 
               {step === AUTH_STEP.PASSWORD ? (
@@ -420,6 +434,11 @@ const styles = StyleSheet.create({
   inputCluster: {
     width: '100%',
     paddingBottom: 24,
+  },
+  hiddenFieldWrap: {
+    height: 0,
+    opacity: 0,
+    overflow: 'hidden',
   },
   title: {
     fontSize: DESIGN.font.title,
