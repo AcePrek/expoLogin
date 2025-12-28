@@ -6,21 +6,22 @@
  * - Do not change auth logic here (that lives in AuthScreen.logic.js).
  */
 
-import React, { useMemo } from 'react';
+import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { AUTH_STEP, useAuthScreenLogic } from './AuthScreen.logic';
+
+let didWarnMissingSafeAreaProvider = false;
 
 /**
  * =========================
@@ -57,12 +58,12 @@ const DESIGN = {
 
   spacing: {
     screenPadding: 16,
-    titleTop: 75,
+    titleTop: 51,
     titleGap: 8,
-    sectionTop: 314,
-    inputTopGap: 9,
+    // inputTopGap: distance between label and input box
+    inputTopGap: 8,
     inputHeight: 64,
-    buttonHeight: 64,
+    buttonHeight: 54,
     // Figma: 22.5625rem ≈ 361px (keep button centered on large screens)
     buttonMaxWidth: 361,
     buttonTopGap: 16,
@@ -80,18 +81,19 @@ const DESIGN = {
     subtitle: 14,
     label: 16,
     input: 18,
-    button: 20,
+    button: 16,
     helper: 14,
   },
 
   strings: {
-    title: '👋🏻 Welcome',
+    titleWelcome: '👋🏻 Welcome',
+    titleWelcomeBack: '😁 Welcome Back',
     subtitle: 'Any additional message can come here',
     ctaStart: 'SIGN IN',
     ctaContinue: 'CONTINUE',
     fields: {
       nameLabel: 'Your Name',
-      namePlaceholder: 'Anupam',
+      namePlaceholder: 'Name Here',
       emailLabel: 'Email',
       emailPlaceholder: 'abc@gmail.com',
       passwordLabelNew: 'Create Password',
@@ -145,7 +147,20 @@ function RightAdornment({ theme, emailCheckStatus }) {
 export function AuthScreen({ supabase }) {
   const theme = useMemo(() => getTheme(), []);
   const shadowColor = theme.shadow ?? DESIGN.colors.shadow;
-  const insets = useSafeAreaInsets();
+  const insets = useContext(SafeAreaInsetsContext);
+
+  // Focus refs for inputs (keeping keyboard open by switching focus instead of unmounting)
+  const emailRef = useRef(null);
+  const nameRef = useRef(null);
+  const passwordRef = useRef(null);
+
+  if (!insets && typeof __DEV__ !== 'undefined' && __DEV__ && !didWarnMissingSafeAreaProvider) {
+    didWarnMissingSafeAreaProvider = true;
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[expo-login-auth-module] Missing <SafeAreaProvider /> at app root. Wrap your app with SafeAreaProvider from react-native-safe-area-context to enable safe-area insets.'
+    );
+  }
   const bottomGap = (insets?.bottom ?? 0) + 16; // requirement: always 16px above keyboard/safe-area
   const {
     step,
@@ -164,16 +179,31 @@ export function AuthScreen({ supabase }) {
     goNext,
     goBack,
     reset,
+    beginEditEmail,
     isNewUser,
     isExistingUser,
   } = useAuthScreenLogic({ supabase });
 
+  const headerTitle = isExistingUser ? DESIGN.strings.titleWelcomeBack : DESIGN.strings.titleWelcome;
+
+  // 1. Focus logic (Keyboard lift is handled automatically by KeyboardAvoidingView)
+  useEffect(() => {
+    // Small delay to allow the LayoutAnimation from the logic layer to start,
+    // then switch focus to the correct input.
+    const timer = setTimeout(() => {
+      if (step === AUTH_STEP.EMAIL) emailRef.current?.focus();
+      if (step === AUTH_STEP.NAME) nameRef.current?.focus();
+      if (step === AUTH_STEP.PASSWORD) passwordRef.current?.focus();
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [step]);
+
   return (
-    <SafeAreaView style={[styles.screen, { backgroundColor: theme.bg }]}>
+    <View style={[styles.screen, { backgroundColor: theme.bg }]}>
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {step !== AUTH_STEP.START ? (
           <Pressable onPress={reset} style={[styles.closeButton, { backgroundColor: theme.closeBg }]} accessibilityLabel="Close">
@@ -194,6 +224,10 @@ export function AuthScreen({ supabase }) {
                   shadowColor: theme.shadow ?? shadowColor,
                   borderBottomColor: theme.shadow ?? shadowColor,
                   opacity: pressed ? 0.9 : 1,
+                  // "Sink" effect when pressed
+                  transform: [{ translateY: pressed ? 1.5 : 0 }],
+                  borderBottomWidth: pressed ? 1 : 3,
+                  shadowOffset: { width: 0, height: pressed ? 0.5 : 2 },
                 },
               ]}
             >
@@ -202,41 +236,55 @@ export function AuthScreen({ supabase }) {
             <View style={{ flex: 1 }} />
           </View>
         ) : (
-          <>
-            <ScrollView
-              contentContainerStyle={[
-                styles.container,
-                {
-                  paddingHorizontal: DESIGN.spacing.screenPadding,
-                  paddingBottom: DESIGN.spacing.buttonHeight + bottomGap + 16,
-                },
-              ]}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              automaticallyAdjustKeyboardInsets
-            >
-              <View style={{ height: DESIGN.spacing.titleTop }} />
-              <Text style={[styles.title, { color: theme.text }]}>{DESIGN.strings.title}</Text>
-              <View style={{ height: DESIGN.spacing.titleGap }} />
-              <Text style={[styles.subtitle, { color: theme.muted }]}>{DESIGN.strings.subtitle}</Text>
+          <ScrollView
+            style={styles.flex1}
+            contentContainerStyle={[
+              styles.container,
+              {
+                paddingHorizontal: DESIGN.spacing.screenPadding,
+                paddingBottom: bottomGap,
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="none"
+          >
+            <View style={{ height: DESIGN.spacing.titleTop }} />
+            <Text style={[styles.title, { color: theme.text }]}>{headerTitle}</Text>
+            <View style={{ height: DESIGN.spacing.titleGap }} />
+            <Text style={[styles.subtitle, { color: theme.muted }]}>{DESIGN.strings.subtitle}</Text>
 
-              <View style={{ height: DESIGN.spacing.sectionTop - DESIGN.spacing.titleTop }} />
+            {/* Flexible spacer to push input area to bottom */}
+            <View style={styles.flex1} />
 
-              {step === AUTH_STEP.EMAIL ? (
+            <View style={styles.inputCluster}>
+              {/* Email row is shared across EMAIL and existing-user PASSWORD step to keep focus mounted (prevents keyboard close/open). */}
+              {step === AUTH_STEP.EMAIL || (step === AUTH_STEP.PASSWORD && isExistingUser) ? (
                 <>
-                  <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.emailLabel}</Text>
-                  <View style={{ height: DESIGN.spacing.inputTopGap }} />
+                  {step === AUTH_STEP.EMAIL ? (
+                    <>
+                      <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.emailLabel}</Text>
+                      <View style={{ height: DESIGN.spacing.inputTopGap }} />
+                    </>
+                  ) : null}
+
                   <View
                     style={[
                       styles.inputWrap,
                       {
-                        borderColor: errorMessage ? theme.danger : theme.border,
+                        borderColor:
+                          step === AUTH_STEP.PASSWORD
+                            ? (theme.borderMuted ?? '#E7E3EC')
+                            : errorMessage
+                              ? theme.danger
+                              : theme.border,
                       },
                     ]}
                   >
                     <TextInput
+                      ref={emailRef}
                       value={email}
                       onChangeText={setEmail}
+                      onFocus={step === AUTH_STEP.PASSWORD ? beginEditEmail : undefined}
                       placeholder={DESIGN.strings.fields.emailPlaceholder}
                       placeholderTextColor={theme.placeholder}
                       style={[styles.input, { color: theme.text }]}
@@ -248,10 +296,15 @@ export function AuthScreen({ supabase }) {
                       returnKeyType="done"
                     />
                     <View style={styles.adornment}>
-                      {emailIsValid ? <RightAdornment theme={theme} emailCheckStatus={emailCheckStatus} /> : null}
+                      {step === AUTH_STEP.EMAIL ? (emailIsValid ? <RightAdornment theme={theme} emailCheckStatus={emailCheckStatus} /> : null) : <RightAdornment theme={theme} emailCheckStatus="ready" />}
                     </View>
                   </View>
-                  {errorMessage ? <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text> : null}
+
+                  {step === AUTH_STEP.EMAIL && errorMessage ? (
+                    <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text>
+                  ) : null}
+
+                  {step === AUTH_STEP.PASSWORD && isExistingUser ? <View style={{ height: 20 }} /> : null}
                 </>
               ) : null}
 
@@ -268,6 +321,7 @@ export function AuthScreen({ supabase }) {
                     ]}
                   >
                     <TextInput
+                      ref={nameRef}
                       value={name}
                       onChangeText={setName}
                       placeholder={DESIGN.strings.fields.namePlaceholder}
@@ -296,6 +350,7 @@ export function AuthScreen({ supabase }) {
                     ]}
                   >
                     <TextInput
+                      ref={passwordRef}
                       value={password}
                       onChangeText={setPassword}
                       placeholder={DESIGN.strings.fields.passwordPlaceholder}
@@ -312,18 +367,9 @@ export function AuthScreen({ supabase }) {
                   {errorMessage ? <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text> : null}
                 </>
               ) : null}
-            </ScrollView>
 
-            {/* Fixed footer CTA: always stays above keyboard by 16px */}
-            <View
-              style={[
-                styles.footer,
-                {
-                  paddingHorizontal: DESIGN.spacing.screenPadding,
-                  paddingBottom: bottomGap,
-                },
-              ]}
-            >
+              <View style={{ height: DESIGN.spacing.buttonTopGap }} />
+
               <Pressable
                 disabled={!canContinue}
                 onPress={goNext}
@@ -335,6 +381,10 @@ export function AuthScreen({ supabase }) {
                     shadowColor: canContinue ? (theme.shadow ?? shadowColor) : 'transparent',
                     borderBottomColor: canContinue ? (theme.shadow ?? shadowColor) : 'transparent',
                     opacity: pressed ? 0.95 : 1,
+                    // "Sink" effect when pressed
+                    transform: [{ translateY: canContinue && pressed ? 1.5 : 0 }],
+                    borderBottomWidth: canContinue && pressed ? 1 : 3,
+                    shadowOffset: { width: 0, height: canContinue && pressed ? 0.5 : 2 },
                   },
                 ]}
               >
@@ -345,10 +395,10 @@ export function AuthScreen({ supabase }) {
                 )}
               </Pressable>
             </View>
-          </>
+          </ScrollView>
         )}
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -356,26 +406,24 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  container: {
+  flex1: {
     flex: 1,
+  },
+  container: {
+    flexGrow: 1,
     paddingTop: 0,
   },
   startWrap: {
     flex: 1,
     justifyContent: 'center',
   },
-  footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingTop: 16,
-    backgroundColor: 'transparent',
+  inputCluster: {
+    width: '100%',
+    paddingBottom: 24,
   },
   title: {
     fontSize: DESIGN.font.title,
     fontWeight: '900',
-    // Best-effort font mapping (host app should load Figtree)
     fontFamily: 'Figtree-ExtraBold',
   },
   subtitle: {
@@ -386,7 +434,6 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: DESIGN.font.label,
-    marginBottom: 14,
     fontFamily: 'Figtree-Medium',
   },
   inputWrap: {
@@ -425,27 +472,21 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: DESIGN.spacing.buttonMaxWidth,
     alignSelf: 'center',
-    // Figma: padding 1.25rem 0 (20px vertical)
-    paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: DESIGN.radius.button,
     borderWidth: 1,
-    // Sharp bottom "shadow line" look (cross-platform):
-    // - iOS uses shadow props (no blur)
-    // - Android gets a crisp bottom border (elevation adds blur)
+    // Ensure the bottom border is visible as a distinct "shadow" line
+    borderBottomWidth: 3, 
     shadowOpacity: 1,
     shadowRadius: 0,
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     elevation: 0,
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
   },
   primaryButtonText: {
     fontSize: DESIGN.font.button,
-    fontWeight: '900',
-    letterSpacing: 1,
-    fontFamily: 'Figtree-Black',
+    fontWeight: '700',
+    fontFamily: 'Figtree-Bold',
   },
   checkWrap: {
     width: 24,
@@ -460,18 +501,19 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 75,
-    right: 16,
+    top: 46,
+    right: 20,
     zIndex: 10,
-    width: 30,
-    height: 30,
-    borderRadius: 40,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeText: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '400',
+    marginTop: -2, // Optical centering for the '×' symbol
   },
 });
 

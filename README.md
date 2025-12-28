@@ -36,6 +36,37 @@ npm install github:AcePrek/expoLogin
 ## Required peer deps (your app already has these)
 - `react`
 - `react-native`
+- `react-native-safe-area-context` (required for safe-area insets used by the UI)
+
+## Safe Area setup (required)
+
+1) Install:
+
+```bash
+npx expo install react-native-safe-area-context
+```
+
+2) Wrap your app root with `SafeAreaProvider` (example `index.js`):
+
+```js
+import React from 'react';
+import { registerRootComponent } from 'expo';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import App from './App';
+
+function Root() {
+  return (
+    <SafeAreaProvider>
+      <App />
+    </SafeAreaProvider>
+  );
+}
+
+registerRootComponent(Root);
+```
+
+Troubleshooting:
+- If you still hit a safe-area error after installing + wrapping, stop Expo and run `npx expo start --clear`. If it still fails, paste the next log/screenshot and I’ll keep going.
 
 ## Supabase client setup (in your Expo app)
 

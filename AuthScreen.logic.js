@@ -12,7 +12,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { createAuthProviders } from './auth.providers';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 function normalizeEmail(email) {
   return String(email ?? '').trim();
@@ -42,6 +48,16 @@ export function useAuthScreenLogic({ supabase }) {
   const providers = useMemo(() => createAuthProviders({ supabase }), [supabase]);
   const emailPasswordProvider = providers.emailPassword;
 
+  // Helper to trigger a slick native animation for any layout-changing state update
+  const animateLayout = (duration = 250) => {
+    LayoutAnimation.configureNext({
+      duration,
+      create: { type: 'easeInEaseOut', property: 'opacity' },
+      update: { type: 'easeInEaseOut' },
+      delete: { type: 'easeInEaseOut', property: 'opacity' },
+    });
+  };
+
   const [step, setStep] = useState(AUTH_STEP.START);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -49,12 +65,37 @@ export function useAuthScreenLogic({ supabase }) {
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Animated state setters
+  const setStepWithAnimation = (nextStep) => {
+    animateLayout(250); // Sync with iOS keyboard
+    setStep(nextStep);
+  };
+
+  const setErrorMessageWithAnimation = (msg) => {
+    animateLayout(200); // Slightly faster for feedback
+    setErrorMessage(msg);
+  };
+
+  const setBusyWithAnimation = (isBusy) => {
+    animateLayout(200);
+    setBusy(isBusy);
+  };
+
   // Email existence check state
-  // - idle: no valid email yet
-  // - checking: async in-flight
-  // - ready: check complete (shows green check in UI)
-  const [emailCheckStatus, setEmailCheckStatus] = useState('idle'); // idle | checking | ready
-  const [emailExists, setEmailExists] = useState(null); // boolean | null
+  const [emailCheckStatus, setEmailCheckStatus] = useState('idle');
+  const [emailExists, setEmailExists] = useState(null);
+
+  // Animated check status setter
+  const setEmailCheckStatusWithAnimation = (status) => {
+    animateLayout(200);
+    setEmailCheckStatus(status);
+  };
+
+  const setEmailExistsWithAnimation = (exists) => {
+    animateLayout(200);
+    setEmailExists(exists);
+  };
+
   const emailCheckRequestId = useRef(0);
   const emailCheckDebounce = useRef(null);
 
@@ -64,9 +105,10 @@ export function useAuthScreenLogic({ supabase }) {
   // Reset check state whenever email changes
   useEffect(() => {
     if (step !== AUTH_STEP.EMAIL) return;
-    setErrorMessage('');
-    setEmailExists(null);
-    setEmailCheckStatus('idle');
+    // Do not show any email-check errors in UI; keep it clean.
+    setErrorMessageWithAnimation('');
+    setEmailExistsWithAnimation(null);
+    setEmailCheckStatusWithAnimation('idle');
   }, [email, step]);
 
   // Auto-check email when it becomes valid on the EMAIL step (debounced).
@@ -75,15 +117,14 @@ export function useAuthScreenLogic({ supabase }) {
 
     const normalized = normalizeEmail(email).toLowerCase();
     if (!normalized) {
-      setEmailCheckStatus('idle');
-      setEmailExists(null);
+      setEmailCheckStatusWithAnimation('idle');
+      setEmailExistsWithAnimation(null);
       return;
     }
 
     if (!validateEmailV2(normalized)) {
-      // Show error only after user typed something, but do not call server.
-      setEmailCheckStatus('idle');
-      setEmailExists(null);
+      setEmailCheckStatusWithAnimation('idle');
+      setEmailExistsWithAnimation(null);
       return;
     }
 
@@ -94,25 +135,52 @@ export function useAuthScreenLogic({ supabase }) {
 
     emailCheckDebounce.current = setTimeout(async () => {
       const reqId = ++emailCheckRequestId.current;
-      setEmailCheckStatus('checking');
-      setErrorMessage('');
+      setEmailCheckStatusWithAnimation('checking');
+      // Keep UI clean: no error surfaced for email-check failures.
+      setErrorMessageWithAnimation('');
 
-      try {
-        const exists = await emailPasswordProvider.checkEmailExists({ email: normalized });
-        // Ignore stale responses.
-        if (reqId !== emailCheckRequestId.current) return;
-        setEmailExists(Boolean(exists));
-        setEmailCheckStatus('ready');
-      } catch (err) {
-        if (reqId !== emailCheckRequestId.current) return;
-        const message = err instanceof Error ? err.message : 'Failed to check email.';
-        setEmailExists(null);
-        setEmailCheckStatus('idle');
-        setErrorMessage(message);
-        if (typeof __DEV__ !== 'undefined' && __DEV__) {
-          // eslint-disable-next-line no-console
-          console.error('[auth-module] Email check failed', { message });
+      const maxAttempts = 4;
+      const baseDelayMs = 350;
+      let lastError = null;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        try {
+          const exists = await emailPasswordProvider.checkEmailExists({ email: normalized });
+          if (reqId !== emailCheckRequestId.current) return;
+          setEmailExistsWithAnimation(Boolean(exists));
+          setEmailCheckStatusWithAnimation('ready');
+          return;
+        } catch (err) {
+          lastError = err;
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+            // eslint-disable-next-line no-console
+            console.warn('[auth-module] Email check failed (retrying silently)', {
+              attempt: attempt + 1,
+              maxAttempts,
+              message,
+            });
+          }
+
+          // Backoff with small jitter; keep status "checking" so UI just shows spinner.
+          const jitter = Math.floor(Math.random() * 120);
+          const delay = baseDelayMs * (attempt + 1) + jitter;
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, delay));
+
+          if (reqId !== emailCheckRequestId.current) return;
+          setEmailCheckStatusWithAnimation('checking');
         }
+      }
+
+      // Give up silently: keep UI clean. User can retry by editing email (or we can auto-retry on next debounce).
+      if (reqId !== emailCheckRequestId.current) return;
+      setEmailExistsWithAnimation(null);
+      setEmailCheckStatusWithAnimation('idle');
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        const message = lastError instanceof Error ? lastError.message : String(lastError ?? 'Unknown error');
+        // eslint-disable-next-line no-console
+        console.error('[auth-module] Email check failed (silent) after retries', { message });
       }
     }, 500);
 
@@ -125,10 +193,8 @@ export function useAuthScreenLogic({ supabase }) {
   const passwordIsValid = validatePasswordV1(password);
   const nameIsValid = String(name ?? '').trim().length > 0;
 
-  // When is the primary button enabled?
   const canContinue = useMemo(() => {
     if (busy) return false;
-
     if (step === AUTH_STEP.START) return true;
     if (step === AUTH_STEP.EMAIL) return emailIsValid && emailCheckStatus === 'ready';
     if (step === AUTH_STEP.NAME) return nameIsValid;
@@ -142,43 +208,56 @@ export function useAuthScreenLogic({ supabase }) {
   }, [step]);
 
   function start() {
-    setErrorMessage('');
-    setStep(AUTH_STEP.EMAIL);
+    setErrorMessageWithAnimation('');
+    setStepWithAnimation(AUTH_STEP.EMAIL);
   }
 
   function reset() {
-    setErrorMessage('');
+    setErrorMessageWithAnimation('');
     setName('');
     setEmail('');
     setPassword('');
-    setEmailExists(null);
-    setEmailCheckStatus('idle');
-    setStep(AUTH_STEP.START);
+    setEmailExistsWithAnimation(null);
+    setEmailCheckStatusWithAnimation('idle');
+    setStepWithAnimation(AUTH_STEP.START);
   }
 
   function goBack() {
-    setErrorMessage('');
+    setErrorMessageWithAnimation('');
     if (step === AUTH_STEP.PASSWORD) {
       setPassword('');
-      setStep(isNewUser ? AUTH_STEP.NAME : AUTH_STEP.EMAIL);
+      setStepWithAnimation(isNewUser ? AUTH_STEP.NAME : AUTH_STEP.EMAIL);
       return;
     }
     if (step === AUTH_STEP.NAME) {
       setName('');
-      setStep(AUTH_STEP.EMAIL);
+      setStepWithAnimation(AUTH_STEP.EMAIL);
       return;
     }
     if (step === AUTH_STEP.EMAIL) {
       setEmail('');
-      setEmailExists(null);
-      setEmailCheckStatus('idle');
-      setStep(AUTH_STEP.START);
+      setEmailExistsWithAnimation(null);
+      setEmailCheckStatusWithAnimation('idle');
+      setStepWithAnimation(AUTH_STEP.START);
     }
+  }
+
+  /**
+   * When user is on PASSWORD step (existing user flow) and taps the email row,
+   * we take them back to EMAIL step to edit + re-check existence.
+   * This keeps the state machine consistent and preserves the "perfect" transition.
+   */
+  function beginEditEmail() {
+    setErrorMessageWithAnimation('');
+    setPassword('');
+    setEmailExistsWithAnimation(null);
+    setEmailCheckStatusWithAnimation('idle');
+    setStepWithAnimation(AUTH_STEP.EMAIL);
   }
 
   async function goNext() {
     if (busy) return;
-    setErrorMessage('');
+    setErrorMessageWithAnimation('');
 
     if (step === AUTH_STEP.START) {
       start();
@@ -187,23 +266,23 @@ export function useAuthScreenLogic({ supabase }) {
 
     if (step === AUTH_STEP.EMAIL) {
       if (!emailIsValid) {
-        setErrorMessage('Input email correctly');
+        setErrorMessageWithAnimation('Input email correctly');
         return;
       }
       if (emailCheckStatus !== 'ready') {
-        setErrorMessage('Checking email…');
+        setErrorMessageWithAnimation('Checking email…');
         return;
       }
-      setStep(isExistingUser ? AUTH_STEP.PASSWORD : AUTH_STEP.NAME);
+      setStepWithAnimation(isExistingUser ? AUTH_STEP.PASSWORD : AUTH_STEP.NAME);
       return;
     }
 
     if (step === AUTH_STEP.NAME) {
       if (!nameIsValid) {
-        setErrorMessage('Please enter your name');
+        setErrorMessageWithAnimation('Please enter your name');
         return;
       }
-      setStep(AUTH_STEP.PASSWORD);
+      setStepWithAnimation(AUTH_STEP.PASSWORD);
       return;
     }
 
@@ -214,29 +293,20 @@ export function useAuthScreenLogic({ supabase }) {
 
   async function submit() {
     if (busy) return;
-    setErrorMessage('');
+    setErrorMessageWithAnimation('');
 
-    // Password screen validation
     if (!passwordIsValid) {
       const msg = 'Atleast 8 digit, for your security’s sake 🤗';
-      setErrorMessage(msg);
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        // eslint-disable-next-line no-console
-        console.warn('[auth-module] Password validation failed', { message: msg });
-      }
+      setErrorMessageWithAnimation(msg);
       return;
     }
 
-    setBusy(true);
+    setBusyWithAnimation(true);
     try {
       const normalizedEmail = normalizeEmail(email).toLowerCase();
       const trimmedName = String(name ?? '').trim();
 
       if (isNewUser) {
-        if (!trimmedName) {
-          setErrorMessage('Please enter your name');
-          return;
-        }
         await emailPasswordProvider.signUp({
           name: trimmedName,
           email: normalizedEmail,
@@ -248,22 +318,15 @@ export function useAuthScreenLogic({ supabase }) {
           password: String(password ?? ''),
         });
       }
-      // Success: the demo app listens to Supabase auth state changes and will show Logged in ✅
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong.';
-      setErrorMessage(message);
-      // Dev-only logging (no passwords / no PII)
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        // eslint-disable-next-line no-console
-        console.error('[auth-module] Auth submit failed', { step, message });
-      }
+      setErrorMessageWithAnimation(message);
     } finally {
-      setBusy(false);
+      setBusyWithAnimation(false);
     }
   }
 
   return {
-    // State
     step,
     name,
     email,
@@ -272,26 +335,19 @@ export function useAuthScreenLogic({ supabase }) {
     errorMessage,
     emailCheckStatus,
     emailExists,
-
-    // Setters (UI calls these)
     setName,
     setEmail,
     setPassword,
-
-    // Derived
     isNewUser,
     isExistingUser,
     emailIsValid,
     canContinue,
     primaryButtonLabel,
-
-    // Actions
     start,
     reset,
     goBack,
+    beginEditEmail,
     goNext,
     submit
   };
 }
-
-
