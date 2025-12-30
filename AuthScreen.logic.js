@@ -42,9 +42,9 @@ export const AUTH_STEP = {
 };
 
 /**
- * @param {{ supabase: any }} params
+ * @param {{ supabase: any, startAt?: 'start'|'email' }} params
  */
-export function useAuthScreenLogic({ supabase }) {
+export function useAuthScreenLogic({ supabase, startAt }) {
   const providers = useMemo(() => createAuthProviders({ supabase }), [supabase]);
   const emailPasswordProvider = providers.emailPassword;
 
@@ -58,7 +58,8 @@ export function useAuthScreenLogic({ supabase }) {
     });
   };
 
-  const [step, setStep] = useState(AUTH_STEP.START);
+  const initialStep = startAt === 'email' ? AUTH_STEP.EMAIL : AUTH_STEP.START;
+  const [step, setStep] = useState(initialStep);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -219,7 +220,7 @@ export function useAuthScreenLogic({ supabase }) {
     setPassword('');
     setEmailExistsWithAnimation(null);
     setEmailCheckStatusWithAnimation('idle');
-    setStepWithAnimation(AUTH_STEP.START);
+    setStepWithAnimation(initialStep);
   }
 
   function goBack() {
@@ -238,7 +239,7 @@ export function useAuthScreenLogic({ supabase }) {
       setEmail('');
       setEmailExistsWithAnimation(null);
       setEmailCheckStatusWithAnimation('idle');
-      setStepWithAnimation(AUTH_STEP.START);
+      setStepWithAnimation(initialStep);
     }
   }
 

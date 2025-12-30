@@ -144,7 +144,7 @@ function RightAdornment({ theme, emailCheckStatus }) {
 /**
  * Public API: <AuthScreen supabase={supabaseClient} />
  */
-export function AuthScreen({ supabase }) {
+export function AuthScreen({ supabase, startAt = 'start', onClose }) {
   const theme = useMemo(() => getTheme(), []);
   const shadowColor = theme.shadow ?? DESIGN.colors.shadow;
   const insets = useContext(SafeAreaInsetsContext);
@@ -182,7 +182,7 @@ export function AuthScreen({ supabase }) {
     beginEditEmail,
     isNewUser,
     isExistingUser,
-  } = useAuthScreenLogic({ supabase });
+  } = useAuthScreenLogic({ supabase, startAt });
 
   const headerTitle = isExistingUser ? DESIGN.strings.titleWelcomeBack : DESIGN.strings.titleWelcome;
   const showNameField = isNewUser && (step === AUTH_STEP.NAME || step === AUTH_STEP.PASSWORD);
@@ -208,7 +208,11 @@ export function AuthScreen({ supabase }) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {step !== AUTH_STEP.START ? (
-          <Pressable onPress={reset} style={[styles.closeButton, { backgroundColor: theme.closeBg }]} accessibilityLabel="Close">
+          <Pressable
+            onPress={typeof onClose === 'function' ? onClose : reset}
+            style={[styles.closeButton, { backgroundColor: theme.closeBg }]}
+            accessibilityLabel="Close"
+          >
             <Text style={[styles.closeText, { color: theme.text }]}>×</Text>
           </Pressable>
         ) : null}
