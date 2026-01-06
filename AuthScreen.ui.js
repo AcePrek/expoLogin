@@ -58,11 +58,11 @@ const DESIGN = {
 
   spacing: {
     screenPadding: 16,
-    titleTop: 51,
+    titleTop: 20,
     titleGap: 8,
     // inputTopGap: distance between label and input box
     inputTopGap: 8,
-    inputHeight: 64,
+    inputHeight: 54,
     buttonHeight: 54,
     // Figma: 22.5625rem ≈ 361px (keep button centered on large screens)
     buttonMaxWidth: 361,
@@ -77,18 +77,17 @@ const DESIGN = {
   },
 
   font: {
-    title: 32,
+    title: 24,
     subtitle: 14,
     label: 16,
     input: 18,
-    button: 16,
+    button: 18,
     helper: 14,
   },
 
   strings: {
-    titleWelcome: '👋🏻 Welcome',
-    titleWelcomeBack: '😁 Welcome Back',
-    subtitle: 'Any additional message can come here',
+    titleWelcome: 'Get started',
+    titleWelcomeBack: 'Welcome Back 👋🏻',
     ctaStart: 'SIGN IN',
     ctaContinue: 'CONTINUE',
     fields: {
@@ -96,9 +95,13 @@ const DESIGN = {
       namePlaceholder: 'Name Here',
       emailLabel: 'Email',
       emailPlaceholder: 'abc@gmail.com',
+      otpLabel: 'Enter verification code',
+      otpPlaceholder: '------',
       passwordLabelNew: 'Create Password',
       passwordLabelExisting: 'Password',
       passwordPlaceholder: 'Password',
+      changeEmail: 'Change Email?',
+      resend: 'Resend?',
     },
     hints: {
       passwordMin: 'Atleast 8 digit, for your security’s sake 🤗',
@@ -144,13 +147,14 @@ function RightAdornment({ theme, emailCheckStatus }) {
 /**
  * Public API: <AuthScreen supabase={supabaseClient} />
  */
-export function AuthScreen({ supabase, startAt = 'start', onClose }) {
+export function AuthScreen({ supabase, startAt = 'start', onClose, options }) {
   const theme = useMemo(() => getTheme(), []);
   const shadowColor = theme.shadow ?? DESIGN.colors.shadow;
   const insets = useContext(SafeAreaInsetsContext);
 
   // Focus refs for inputs (keeping keyboard open by switching focus instead of unmounting)
   const emailRef = useRef(null);
+  const otpRef = useRef(null);
   const nameRef = useRef(null);
   const passwordRef = useRef(null);
 
@@ -167,11 +171,13 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
     name,
     email,
     password,
+    otpCode,
     busy,
     errorMessage,
     setName,
     setEmail,
     setPassword,
+    setOtpCode,
     emailCheckStatus,
     emailIsValid,
     canContinue,
@@ -182,11 +188,22 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
     beginEditEmail,
     isNewUser,
     isExistingUser,
-  } = useAuthScreenLogic({ supabase, startAt });
+    shouldCollectName,
+    emailAuthMode,
+    otpResendSeconds,
+    resendOtp,
+  } = useAuthScreenLogic({ supabase, startAt, options });
 
   const headerTitle = isExistingUser ? DESIGN.strings.titleWelcomeBack : DESIGN.strings.titleWelcome;
-  const showNameField = isNewUser && (step === AUTH_STEP.NAME || step === AUTH_STEP.PASSWORD);
+  const showNameField = Boolean(shouldCollectName) && (step === AUTH_STEP.NAME || step === AUTH_STEP.PASSWORD);
   const hideNameFieldVisually = step === AUTH_STEP.PASSWORD;
+  const showOtpField = emailAuthMode === 'otp' && step === AUTH_STEP.OTP;
+  const canResendOtp = emailAuthMode === 'otp' && step === AUTH_STEP.OTP && otpResendSeconds === 0 && !busy;
+
+  const resendLabel = useMemo(() => {
+    if (otpResendSeconds > 0) return `RESEND IN 0:${String(otpResendSeconds).padStart(2, '0')}`;
+    return DESIGN.strings.fields.resend.toUpperCase();
+  }, [otpResendSeconds]);
 
   // 1. Focus logic (Keyboard lift is handled automatically by KeyboardAvoidingView)
   useEffect(() => {
@@ -194,6 +211,7 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
     // then switch focus to the correct input.
     const timer = setTimeout(() => {
       if (step === AUTH_STEP.EMAIL) emailRef.current?.focus();
+      if (step === AUTH_STEP.OTP) otpRef.current?.focus();
       if (step === AUTH_STEP.NAME) nameRef.current?.focus();
       if (step === AUTH_STEP.PASSWORD) passwordRef.current?.focus();
     }, 40);
@@ -208,13 +226,16 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {step !== AUTH_STEP.START ? (
-          <Pressable
-            onPress={typeof onClose === 'function' ? onClose : reset}
-            style={[styles.closeButton, { backgroundColor: theme.closeBg }]}
-            accessibilityLabel="Close"
-          >
-            <Text style={[styles.closeText, { color: theme.text }]}>×</Text>
-          </Pressable>
+          <View style={[styles.headerRow, { marginTop: DESIGN.spacing.titleTop }]}>
+            <Text style={[styles.title, { color: theme.text }]}>{headerTitle}</Text>
+            <Pressable
+              onPress={typeof onClose === 'function' ? onClose : reset}
+              style={[styles.closeButtonInline, { backgroundColor: theme.closeBg }]}
+              accessibilityLabel="Close"
+            >
+              <Text style={[styles.closeText, { color: theme.text }]}>×</Text>
+            </Pressable>
+          </View>
         ) : null}
 
         {step === AUTH_STEP.START ? (
@@ -237,7 +258,9 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
                 },
               ]}
             >
-              <Text style={[styles.primaryButtonText, { color: theme.primaryText }]}>{DESIGN.strings.ctaStart}</Text>
+              <Text style={[styles.primaryButtonText, { color: theme.primaryText }]}>
+                {DESIGN.strings.ctaStart.toUpperCase()}
+              </Text>
             </Pressable>
             <View style={{ flex: 1 }} />
           </View>
@@ -254,24 +277,14 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="none"
           >
-            <View style={{ height: DESIGN.spacing.titleTop }} />
-            <Text style={[styles.title, { color: theme.text }]}>{headerTitle}</Text>
-            <View style={{ height: DESIGN.spacing.titleGap }} />
-            <Text style={[styles.subtitle, { color: theme.muted }]}>{DESIGN.strings.subtitle}</Text>
+            <View style={{ height: 20 }} />
 
-            {/* Flexible spacer to push input area to bottom */}
-            <View style={styles.flex1} />
-
-            <View style={styles.inputCluster}>
-              {/* Email row is shared across EMAIL and existing-user PASSWORD step to keep focus mounted (prevents keyboard close/open). */}
+            {/* Main Input Area (staying at the top) */}
+            <View style={styles.mainInputArea}>
               {step === AUTH_STEP.EMAIL || (step === AUTH_STEP.PASSWORD && isExistingUser) ? (
-                <>
-                  {step === AUTH_STEP.EMAIL ? (
-                    <>
-                      <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.emailLabel}</Text>
-                      <View style={{ height: DESIGN.spacing.inputTopGap }} />
-                    </>
-                  ) : null}
+                <View style={styles.emailRow}>
+                  <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.emailLabel}</Text>
+                  <View style={{ height: DESIGN.spacing.inputTopGap }} />
 
                   <View
                     style={[
@@ -300,24 +313,94 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
                       textContentType="emailAddress"
                       autoComplete="email"
                       returnKeyType="done"
+                      editable={step === AUTH_STEP.EMAIL}
                     />
                     <View style={styles.adornment}>
-                      {step === AUTH_STEP.EMAIL ? (emailIsValid ? <RightAdornment theme={theme} emailCheckStatus={emailCheckStatus} /> : null) : <RightAdornment theme={theme} emailCheckStatus="ready" />}
+                      {step === AUTH_STEP.EMAIL ? (emailIsValid ? <RightAdornment theme={theme} emailCheckStatus={emailCheckStatus} /> : null) : null}
                     </View>
                   </View>
 
                   {step === AUTH_STEP.EMAIL && errorMessage ? (
                     <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text>
                   ) : null}
-
-                  {step === AUTH_STEP.PASSWORD && isExistingUser ? <View style={{ height: 20 }} /> : null}
-                </>
+                </View>
               ) : null}
 
-              {/* Name field is kept MOUNTED across NAME -> PASSWORD for new users to prevent keyboard closing. */}
-              {showNameField ? (
+              {/* OTP field */}
+              {showOtpField ? (
+                <View style={styles.fieldGap16}>
+                  <Text style={[styles.label, { color: theme.muted }]}>{DESIGN.strings.fields.otpLabel}</Text>
+                  <View style={{ height: DESIGN.spacing.inputTopGap }} />
+
+                  <View
+                    style={[
+                      styles.inputWrap,
+                      { borderColor: errorMessage ? theme.danger : theme.border },
+                    ]}
+                  >
+                    <TextInput
+                      ref={otpRef}
+                      value={otpCode}
+                      onChangeText={(t) => setOtpCode(String(t ?? '').replace(/[^\d]/g, '').slice(0, 6))}
+                      placeholder={DESIGN.strings.fields.otpPlaceholder}
+                      placeholderTextColor={theme.placeholder}
+                      style={[styles.input, styles.otpInput, { color: theme.text }]}
+                      keyboardType="number-pad"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      textContentType="oneTimeCode"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      /* Explicitly null to avoid showing the native "Done" bar on some iOS versions */
+                      inputAccessoryViewID={null}
+                    />
+                  </View>
+
+                  {/* Help links below the input */}
+                  <View style={styles.otpFooter}>
+                    <Text style={[styles.otpHelpText, { color: theme.muted }]}>
+                      Sent to {email}{' '}
+                      <Text
+                        onPress={beginEditEmail}
+                        style={[styles.linkTextInline, { color: theme.primary }]}
+                      >
+                        {DESIGN.strings.fields.changeEmail}
+                      </Text>
+                    </Text>
+
+                    <Pressable
+                      onPress={resendOtp}
+                      disabled={!canResendOtp}
+                      style={{ marginTop: 12 }}
+                      hitSlop={8}
+                    >
+                      <Text
+                        style={[
+                          styles.linkTextInline,
+                          {
+                            color: canResendOtp ? theme.primary : theme.muted,
+                            opacity: canResendOtp ? 1 : 0.5,
+                          },
+                        ]}
+                      >
+                        {resendLabel}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {errorMessage ? (
+                    <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {/* Name field (for new users) */}
+              {showNameField && !isExistingUser ? (
                 <View
-                  style={hideNameFieldVisually ? styles.hiddenFieldWrap : undefined}
+                  style={[
+                    emailAuthMode === 'password' ? styles.emailRow : styles.fieldGap16,
+                    hideNameFieldVisually ? styles.hiddenFieldWrap : undefined
+                  ]}
                   pointerEvents={hideNameFieldVisually ? 'none' : 'auto'}
                 >
                   {step === AUTH_STEP.NAME ? (
@@ -353,8 +436,9 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
                 </View>
               ) : null}
 
+              {/* Password field */}
               {step === AUTH_STEP.PASSWORD ? (
-                <>
+                <View style={isExistingUser ? styles.fieldGap16 : styles.emailRow}>
                   <Text style={[styles.label, { color: theme.muted }]}>
                     {isNewUser ? DESIGN.strings.fields.passwordLabelNew : DESIGN.strings.fields.passwordLabelExisting}
                   </Text>
@@ -383,9 +467,14 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
                   </View>
                   <Text style={[styles.hint, { color: theme.muted }]}>{DESIGN.strings.hints.passwordMin}</Text>
                   {errorMessage ? <Text style={[styles.errorText, { color: theme.danger }]}>{errorMessage}</Text> : null}
-                </>
+                </View>
               ) : null}
+            </View>
 
+            {/* Flexible spacer to push rest of input area/CTA to bottom */}
+            <View style={styles.flex1} />
+
+            <View style={styles.inputCluster}>
               <View style={{ height: DESIGN.spacing.buttonTopGap }} />
 
               <Pressable
@@ -409,7 +498,9 @@ export function AuthScreen({ supabase, startAt = 'start', onClose }) {
                 {busy ? (
                   <ActivityIndicator color={theme.primaryText} />
                 ) : (
-                  <Text style={[styles.primaryButtonText, { color: theme.primaryText }]}>{primaryButtonLabel}</Text>
+                  <Text style={[styles.primaryButtonText, { color: theme.primaryText }]}>
+                    {primaryButtonLabel.toUpperCase()}
+                  </Text>
                 )}
               </Pressable>
             </View>
@@ -438,6 +529,53 @@ const styles = StyleSheet.create({
   inputCluster: {
     width: '100%',
     paddingBottom: 24,
+  },
+  mainInputArea: {
+    width: '100%',
+  },
+  emailRow: {
+    width: '100%',
+  },
+  labelRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  linkText: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: 'Figtree-Bold',
+  },
+  linkTextInline: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: 'Figtree-Bold',
+    textDecorationLine: 'none',
+  },
+  otpInput: {
+    fontSize: 24,
+    textAlign: 'left',
+    fontWeight: '700',
+  },
+  otpFooter: {
+    marginTop: 16,
+  },
+  otpHelpText: {
+    fontSize: 14,
+    fontFamily: 'Figtree-Medium',
+  },
+  fieldGap16: {
+    marginTop: 16,
+  },
+  emailContainer: {
+    width: '100%',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: DESIGN.spacing.screenPadding,
   },
   hiddenFieldWrap: {
     height: 0,
@@ -522,11 +660,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '900',
   },
-  closeButton: {
-    position: 'absolute',
-    top: 46,
-    right: 20,
-    zIndex: 10,
+  closeButtonInline: {
     width: 32,
     height: 32,
     borderRadius: 16,

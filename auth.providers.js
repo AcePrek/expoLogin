@@ -202,6 +202,73 @@ export function createAuthProviders({ supabase }) {
         };
       },
     },
+
+    /**
+     * Email OTP (code) auth.
+     *
+     * - requestOtp: sends a code to user's email
+     * - verifyOtp: verifies the code and creates/signs-in user
+     * - updateProfile: optional metadata update (e.g., name) after verification
+     */
+    emailOtp: {
+      id: PROVIDERS.EMAIL_OTP,
+      label: 'Email OTP',
+      enabled: true,
+
+      /**
+       * Request an email OTP.
+       * @param {{ email: string }} params
+       */
+      async requestOtp({ email }) {
+        const { data, error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            // Create user if this is a new email, so the same endpoint supports sign-up and sign-in.
+            shouldCreateUser: true,
+          },
+        });
+
+        if (error) {
+          throw new Error(extractSupabaseErrorMessage(error));
+        }
+
+        return data;
+      },
+
+      /**
+       * Verify an email OTP code.
+       * @param {{ email: string, code: string }} params
+       */
+      async verifyOtp({ email, code }) {
+        const { data, error } = await supabase.auth.verifyOtp({
+          email,
+          token: code,
+          type: 'email',
+        });
+
+        if (error) {
+          throw new Error(extractSupabaseErrorMessage(error));
+        }
+
+        return data;
+      },
+
+      /**
+       * Update the current user's metadata (e.g., name) after OTP verification.
+       * @param {{ name: string }} params
+       */
+      async updateProfile({ name }) {
+        const { data, error } = await supabase.auth.updateUser({
+          data: { name },
+        });
+
+        if (error) {
+          throw new Error(extractSupabaseErrorMessage(error));
+        }
+
+        return data;
+      },
+    },
   };
 }
 

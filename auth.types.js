@@ -10,6 +10,9 @@ export const AUTH_MODE = {
 
 export const PROVIDERS = {
   EMAIL_PASSWORD: 'emailPassword',
+  EMAIL_OTP: 'emailOtp',
+  OAUTH_GOOGLE: 'oauthGoogle',
+  OAUTH_APPLE: 'oauthApple',
 };
 
 

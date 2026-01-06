@@ -9,18 +9,48 @@ This repo is **just the package** (no demo app inside this repo). The intended f
 4) You render `<AuthScreen supabase={client} />`.
 
 ## What it supports (v1)
-- **Sign in**: email + password
-- **Sign up**: name + email + password (name stored in `user_metadata.name`)
-- **No** OTP / magic links in v1
+- **Sign in / Sign up**: email + password
+- **Optional**: email OTP code (Supabase `signInWithOtp` + `verifyOtp`)
 - **No** navigation libs required
 - UI is editable from **one file**
+
+### Developer-only auth mode selection (no UI toggle)
+Consumers control auth mode via the `options` prop. End-users do **not** see any selector.
+
+OTP (default):
+
+```tsx
+<AuthScreen supabase={supabase} />
+```
+
+Password-only:
+
+```tsx
+<AuthScreen
+  supabase={supabase}
+  options={{ email: { password: true, otp: false, default: 'password' } }}
+/>
+```
+
+Both enabled, default to OTP:
+
+```tsx
+<AuthScreen
+  supabase={supabase}
+  options={{ email: { otp: true, password: true, default: 'otp' } }}
+/>
+```
 
 ## Flow (v2)
 This package now uses a simple, modern onboarding flow:
 - Start screen: single **SIGN IN** button
-- Email screen: type email → checks if user exists (spinner → green check) → **CONTINUE**
-- If new: ask **Your Name** → ask **Create Password** → sign up
-- If existing: ask **Password** → sign in
+- Password mode: Email screen checks if user exists (spinner → green check) → **CONTINUE**
+  - If new: ask **Your Name** → ask **Create Password** → sign up
+  - If existing: ask **Password** → sign in
+- OTP mode: Email → send code → enter code → done
+
+### OTP enter-code screen behavior (Figma)
+- After requesting a code, **Resend** is disabled for **30 seconds**.\n+- A countdown is shown (e.g. `RESEND IN 0:30`).\n+- After 30s, **Resend** becomes active.\n+- Users can tap **Change email** to go back and request a new code.
 
 ## Install (from GitHub)
 
@@ -101,6 +131,10 @@ const supabase = createClient(
   }
 );
 ```
+
+## Supabase requirements for OTP mode
+- In Supabase Dashboard: **Authentication → Providers → Email** must be enabled.
+- OTP mode uses Supabase Auth APIs only; it does **not** require the `is-email-registered` Edge Function.
 
 ### Env vars
 
